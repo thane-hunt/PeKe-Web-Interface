@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeKe Clip Controller</title>
+    <style>
+        /* Base styling - black, glassy, futuristic theme */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: 300;
+            letter-spacing: 2px;
+        }
+
+        /* Connection section */
+        .connection-section {
+            margin-bottom: 30px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .status {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .status.connected {
+            background: rgba(0, 255, 100, 0.1);
+            border: 1px solid rgba(0, 255, 100, 0.3);
+        }
+
+        .status.error {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid rgba(255, 0, 0, 0.3);
+        }
+
+        /* Buttons */
+        button {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+
+        button:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .connect-button {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        /* Control buttons grid */
+        .controls-section {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .control-button {
+            padding: 30px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        /* Message display */
+        .message {
+            margin-top: 20px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PeKe Clip Controller</h1>
+        
+        <!-- Connection Section -->
+        <div class="connection-section">
+            <button id="connectBtn" class="connect-button">Connect to Device</button>
+            <div id="status" class="status">Not connected</div>
+        </div>
+
+        <!-- Control Buttons Section -->
+        <div class="controls-section">
+            <button class="control-button" data-value="0" disabled>0</button>
+            <button class="control-button" data-value="1" disabled>1</button>
+            <button class="control-button" data-value="2" disabled>2</button>
+            <button class="control-button" data-value="3" disabled>3</button>
+        </div>
+
+        <!-- Message Display -->
+        <div id="message" class="message">Ready to connect</div>
+    </div>
+
+    <script>
+        // WebHID Controller Class
+        class PeKeClipController {
+            constructor() {
+                // Device reference
+                this.device = null;
+                
+                // UI elements
+                this.connectBtn = document.getElementById('connectBtn');
+                this.statusDiv = document.getElementById('status');
+                this.messageDiv = document.getElementById('message');
+                this.controlButtons = document.querySelectorAll('.control-button');
+                
+                // Feature report configuration
+                this.REPORT_ID = 0x04;  // Report ID for feature reports
+                this.DEVICE_NAME = 'PeKe Clip';  // Expected device name
+                
+                // Initialize event listeners
+                this.initializeEventListeners();
+                
+                // Check for WebHID support
+                this.checkWebHIDSupport();
+            }
+
+            /**
+             * Check if WebHID is supported in the browser
+             */
+            checkWebHIDSupport() {
+                if (!('hid' in navigator)) {
+                    this.showError('WebHID is not supported in this browser. Please use Chrome or Edge.');
+                    this.connectBtn.disabled = true;
+                }
+            }
+
+            /**
+             * Initialize all event listeners
+             */
+            initializeEventListeners() {
+                // Connect button
+                this.connectBtn.addEventListener('click', () => this.handleConnect());
+                
+                // Control buttons
+                this.controlButtons.forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const value = parseInt(e.target.dataset.value);
+                        this.sendFeatureReport(value);
+                    });
+                });
+                
+                // Listen for device disconnection
+                navigator.hid?.addEventListener('disconnect', (event) => {
+                    if (event.device === this.device) {
+                        this.handleDisconnect();
+                    }
+                });
+            }
+
+            /**
+             * Handle device connection
+             */
+            async handleConnect() {
+                try {
+                    // Check if already connected
+                    if (this.device && this.device.opened) {
+                        // Disconnect
+                        await this.device.close();
+                        this.handleDisconnect();
+                        return;
+                    }
+
+                    // Request device access
+                    const devices = await navigator.hid.requestDevice({
+                        filters: [] // No filters - show all HID devices
+                    });
+
+                    if (devices.length === 0) {
+                        this.showMessage('No device selected');
+                        return;
+                    }
+
+                    // Find PeKe Clip device
+                    this.device = devices.find(d => d.productName === this.DEVICE_NAME) || devices[0];
+                    
+                    // Open the device if not already open
+                    if (!this.device.opened) {
+                        await this.device.open();
+                    }
+
+                    // Update UI for connected state
+                    this.setConnectedState();
+                    this.showMessage(`Connected to ${this.device.productName}`);
+
+                } catch (error) {
+                    this.showError(`Connection failed: ${error.message}`);
+                    console.error('Connection error:', error);
+                }
+            }
+
+            /**
+             * Handle device disconnection
+             */
+            handleDisconnect() {
+                this.device = null;
+                this.setDisconnectedState();
+                this.showMessage('Device disconnected');
+            }
+
+            /**
+             * Send a feature report to the device
+             * @param {number} value - The value to send (0-3)
+             */
+            async sendFeatureReport(value) {
+                if (!this.device || !this.device.opened) {
+                    this.showError('Device not connected');
+                    return;
+                }
+
+                try {
+                    // Create the data array with the value
+                    const data = new Uint8Array([value]);
+                    
+                    // Send the feature report
+                    await this.device.sendFeatureReport(this.REPORT_ID, data);
+                    
+                    this.showMessage(`Sent value: ${value}`, 'success');
+                    
+                    // Optional: Read back the feature report to confirm
+                    try {
+                        const response = await this.device.receiveFeatureReport(this.REPORT_ID);
+                        const responseValue = new Uint8Array(response.buffer)[0];
+                        console.log(`Confirmed: Device reports value ${responseValue}`);
+                    } catch (readError) {
+                        console.log('Could not read confirmation:', readError);
+                    }
+
+                } catch (error) {
+                    this.showError(`Failed to send: ${error.message}`);
+                    console.error('Send error:', error);
+                }
+            }
+
+            /**
+             * Update UI to show connected state
+             */
+            setConnectedState() {
+                this.connectBtn.textContent = 'Disconnect';
+                this.statusDiv.textContent = `Connected to ${this.device.productName}`;
+                this.statusDiv.className = 'status connected';
+                
+                // Enable control buttons
+                this.controlButtons.forEach(btn => btn.disabled = false);
+            }
+
+            /**
+             * Update UI to show disconnected state
+             */
+            setDisconnectedState() {
+                this.connectBtn.textContent = 'Connect to Device';
+                this.statusDiv.textContent = 'Not connected';
+                this.statusDiv.className = 'status';
+                
+                // Disable control buttons
+                this.controlButtons.forEach(btn => btn.disabled = true);
+            }
+
+            /**
+             * Show a message to the user
+             * @param {string} message - The message to display
+             * @param {string} type - Message type (normal, success, error)
+             */
+            showMessage(message, type = 'normal') {
+                this.messageDiv.textContent = message;
+                this.messageDiv.style.color = type === 'success' ? '#0f0' : '#fff';
+                
+                // Auto-clear success messages after 3 seconds
+                if (type === 'success') {
+                    setTimeout(() => {
+                        this.messageDiv.textContent = 'Ready';
+                        this.messageDiv.style.color = '#fff';
+                    }, 3000);
+                }
+            }
+
+            /**
+             * Show an error message
+             * @param {string} message - The error message to display
+             */
+            showError(message) {
+                this.messageDiv.textContent = message;
+                this.messageDiv.style.color = '#f00';
+            }
+        }
+
+        // Initialize the controller when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            const controller = new PeKeClipController();
+        });
+    </script>
+</body>
+</html>
